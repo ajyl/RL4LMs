@@ -20,7 +20,6 @@ from urllib.request import urlretrieve
 from pathlib import Path
 from rl4lms.envs.text_generation.reward import BatchedRewardFunction
 from typing import List, Dict, Any
-from rl4lms.envs.text_generation.metric import MeteorMetric
 
 _model, _tokenizer = None, None
 
@@ -201,7 +200,8 @@ class CommonGenPrefRM(BatchedRewardFunction):
         self._batch_size = batch_size
         self._concept_penalty_coeff = concept_penalty_coeff
         self._meteor_coeff = meteor_coeff
-        self._meteor_metric = MeteorMetric()
+        breakpoint()
+        #self._meteor_metric = MeteorMetric()
 
     def _get_missing_concepts(self, gen: str, concepts: List[str]):
         gen_text = gen.lower()

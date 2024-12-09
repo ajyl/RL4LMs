@@ -7,7 +7,7 @@ from typing import List, Dict, Any
 from copy import deepcopy
 from tqdm import tqdm
 from datasets.arrow_dataset import Dataset
-from rl4lms.envs.text_generation.registry import PostProcessorRegistry, MetricRegistry
+from rl4lms.envs.text_generation.registry import MetricRegistry
 
 
 def get_batch(samples: List[Sample], batch_size: int):
@@ -262,11 +262,6 @@ def generate_on_samples(model: PreTrainedModel,
                         ):
     # post-processing fn
     generation_kwargs = deepcopy(generation_kwargs)
-    post_processing_fn = generation_kwargs.pop("post_processing_fn")
-    if post_processing_fn is not None:
-        post_processing_fn = PostProcessorRegistry.get(
-            post_processing_fn["id"])
-
     # generate text by batch
     all_generated_texts = []
     all_ref_texts = []
@@ -275,11 +270,6 @@ def generate_on_samples(model: PreTrainedModel,
     for batch in tqdm(list(get_batch(samples, batch_size)), desc="Predicting"):
         batch_generated_texts = generate_text(
             model, tokenizer, batch, max_prompt_length, generation_kwargs)
-
-        # post-processing of generated text
-        if post_processing_fn is not None:
-            batch_generated_texts = [post_processing_fn(
-                text) for text in batch_generated_texts]
 
         batch_ref_texts = [sample.references for sample in batch]
         batch_prompt_texts = [sample.prompt_or_input_text for sample in batch]

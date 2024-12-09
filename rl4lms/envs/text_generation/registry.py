@@ -10,7 +10,6 @@ from rl4lms.algorithms.trpo import TRPO
 from rl4lms.data_pools.custom_text_generation_pools import (
     IMDB,
     WMT,
-    CNNDailyMail,
     CommonGen,
     CRD3DialogueGeneration,
     IMDBForSeq2Seq,
@@ -25,24 +24,9 @@ from rl4lms.data_pools.text_generation_pool import TextGenPool
 from rl4lms.envs.text_generation.alg_wrappers import wrap_onpolicy_alg
 from rl4lms.envs.text_generation.metric import (
     BaseMetric,
-    BERTScoreMetric,
-    BLEUMetric,
-    BLEURTMetric,
-    BLEUToTTo,
-    CIDERMetric,
-    DiversityMetrics,
     LearnedRewardMetric,
-    MeteorMetric,
     ParentToTTo,
     Perplexity,
-    RougeLMax,
-    RougeMetric,
-    SacreBLEUMetric,
-    SpiceMetric,
-    SummaCConvMetric,
-    SummaCZSMetric,
-    TERMetric,
-    chrFmetric,
     IntentAccuracyDailyDialog,
 )
 from rl4lms.envs.text_generation.policy.base_policy import LMActorCriticPolicy
@@ -54,25 +38,14 @@ from rl4lms.envs.text_generation.policy.seq2seq_policy import (
     Seq2SeqLMActorCriticPolicy,
     MaskedSeq2SeqLMActorCriticPolicy,
 )
-from rl4lms.envs.text_generation.post_processors import three_sentence_summary
 from rl4lms.envs.text_generation.reward import (
     TER,
     BatchedCommonGenPenaltyShapingFunction,
-    BERTScoreRewardFunction,
-    BLEURewardFunction,
-    BLEURTRewardFunction,
     CommonGenPenaltyShapingFunction,
     LearnedRewardFunction,
     LearnedBatchedRewardFunction,
-    MeteorRewardFunction,
     PARENTRewardFunction,
     RewardFunction,
-    RougeCombined,
-    RougeLMaxRewardFunction,
-    RougeRewardFunction,
-    SacreBleu,
-    SpiderRewardFunction,
-    chrF,
     IntentAccuracy,
 )
 from rl4lms.envs.text_generation.preference_reward import CommonGenPrefRM
@@ -90,7 +63,6 @@ class DataPoolRegistry:
         "imdb": IMDB,
         "commongen": CommonGen,
         "totto": ToTTo,
-        "cnn_daily_mail": CNNDailyMail,
         "imdb_seq2seq": IMDBForSeq2Seq,
         "narrative_qa": NarrativeQA,
         "wmt16": WMT,
@@ -117,20 +89,9 @@ class RewardFunctionRegistry:
         "increasing_numbers": RewardIncreasingNumbers,
         "sentences_with_dates": RewardSentencesWithDates,
         "learned_reward": LearnedBatchedRewardFunction,
-        "meteor": MeteorRewardFunction,
-        "rouge": RougeRewardFunction,
-        "bert_score": BERTScoreRewardFunction,
-        "bleu": BLEURewardFunction,
-        "bleurt": BLEURTRewardFunction,
-        "rouge_combined": RougeCombined,
-        "spider": SpiderRewardFunction,
         "common_gen_repeat_penalty": CommonGenPenaltyShapingFunction,
         "common_gen_repeat_penalty_batched": BatchedCommonGenPenaltyShapingFunction,
         "parent": PARENTRewardFunction,
-        "sacre_bleu": SacreBleu,
-        "rouge_l_max": RougeLMaxRewardFunction,
-        "ter": TER,
-        "chrf": chrF,
         "intent_accuracy": IntentAccuracy,
         "common_gen_preference_model": CommonGenPrefRM,
     }
@@ -151,23 +112,8 @@ class MetricRegistry:
         "increasing_numbers": IncreasingNumbersinText,
         "dates": DateInText,
         "learned_reward": LearnedRewardMetric,
-        "meteor": MeteorMetric,
-        "rouge": RougeMetric,
-        "bert_score": BERTScoreMetric,
-        "bleu": BLEUMetric,
-        "bleurt": BLEURTMetric,
-        "diversity": DiversityMetrics,
-        "summaCZS": SummaCZSMetric,
-        "summaCConv": SummaCConvMetric,
         "causal_perplexity": Perplexity,
-        "cider": CIDERMetric,
-        "spice": SpiceMetric,
         "parent_totto": ParentToTTo,
-        "bleu_totto": BLEUToTTo,
-        "rouge_l_max": RougeLMax,
-        "sacre_bleu": SacreBLEUMetric,
-        "ter": TERMetric,
-        "chrf": chrFmetric,
         "intent_accuracy": IntentAccuracyDailyDialog,
     }
 
@@ -245,20 +191,3 @@ class WrapperRegistry:
     def add(cls, id: str, wrapper_def):
         WrapperRegistry._registry[id] = wrapper_def
 
-
-class PostProcessorRegistry:
-    _registry = {
-        "three_sentence_summary": three_sentence_summary,
-    }
-
-    @classmethod
-    def get(cls, post_processor_id: str):
-        try:
-            wrapper_def = cls._registry[post_processor_id]
-        except KeyError:
-            raise NotImplementedError
-        return wrapper_def
-
-    @classmethod
-    def add(cls, id: str, post_processor_fn):
-        PostProcessorRegistry._registry[id] = post_processor_fn
