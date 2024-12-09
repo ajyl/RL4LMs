@@ -16,7 +16,7 @@ datapool:
     prompt: '<|endoftext|>'
 
 env:
-  n_envs: 10
+  n_envs: 1
   args:
     max_prompt_length: 5
     max_episode_length: 20

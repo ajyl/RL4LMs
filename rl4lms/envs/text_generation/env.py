@@ -1,10 +1,12 @@
 from cmath import inf
-from typing import Dict, Tuple, Optional, List
+from typing import Dict, Tuple, Optional, List, Any
 
 import torch
 from gymnasium import Env, spaces
 from gymnasium.spaces.dict import Dict as DictSpace
 from gymnasium.spaces.discrete import Discrete
+from gymnasium.utils import seeding
+from gymnasium.core import ActType, ObsType
 from rl4lms.data_pools.text_generation_pool import Sample
 from rl4lms.envs.text_generation.reward import BatchedRewardFunction, RewardFunction
 from rl4lms.envs.text_generation.observation import Observation
@@ -80,10 +82,10 @@ class TextGenEnv(Env):
         )
         self.action_space = Discrete(n=self._vocab_size)
         # see https://github.com/huggingface/transformers/issues/4875 : rounding up to nearest power of 2 for better GPU efficiency
-        if 'mt5' in self.tokenizer.name_or_path:
+        if "mt5" in self.tokenizer.name_or_path:
             n = 250112
             self.action_space = Discrete(n=n)
-        elif 't5' in self.tokenizer.name_or_path:
+        elif "t5" in self.tokenizer.name_or_path:
             n = 32128
             self.action_space = Discrete(n=n)
         self.sampler_for_replaying = PrioritySampler(priority_scale=priority_scale)
@@ -99,13 +101,31 @@ class TextGenEnv(Env):
         # init tracking variables
         self.__current_sample = None
         self.__current_obs = None
+        self.__previous_obs = None
         self.__time_step = None
 
-    def step(self, action: int) -> Tuple[Dict[str, torch.tensor], int, bool, dict]:
+    def _get_info(self):
+        prev_output = None
+        meta_info = None
+        if self.__previous_obs is not None:
+            prev_output = self.__previous_obs.context_text
+            meta_info = self.__previous_obs.meta_info
+        return {
+            "output": self.__current_obs.context_text,
+            "action_history": self.__current_obs.action_history,
+            "reference_text": self.__current_obs.target_or_reference_texts,
+            "prompt_text": self.__current_obs.prompt_or_input_text,
+            "prev_output": prev_output,
+            "meta_info": meta_info,
+        }
+
+    def step(
+        self, action: int
+    ) -> Tuple[Dict[str, torch.tensor], int, bool, bool, dict]:
         self.__time_step += 1
 
         # previous obs
-        previous_obs = self.__current_obs
+        self.__previous_obs = self.__current_obs
 
         # just update the context tensor and gets the new observation
         self.__current_obs = self.__current_obs.update(action, self.tokenizer)
@@ -121,7 +141,7 @@ class TextGenEnv(Env):
                 None
                 if self.reward_function is None
                 else self.reward_function(
-                    previous_obs,
+                    self.__previous_obs,
                     action,
                     self.__current_obs,
                     done,
@@ -132,21 +152,23 @@ class TextGenEnv(Env):
             reward = -inf  # will be overridden later
 
         # populate additional info
-        info = {
-            "output": self.__current_obs.context_text,
-            "action_history": self.__current_obs.action_history,
-            "reference_text": self.__current_obs.target_or_reference_texts,
-            "prompt_text": self.__current_obs.prompt_or_input_text,
-            "prev_output": previous_obs.context_text,
-            "meta_info": previous_obs.meta_info,
-        }
+        info = self._get_info()
+        truncated = False
+        return self.__current_obs.to_dict(), reward, done, truncated, info
 
-        return self.__current_obs.to_dict(), reward, done, info
-
-    def reset(self, sample: Sample = None) -> Dict[str, torch.tensor]:
+    # def reset(self, seed=None, sample: Sample = None) -> Dict[str, torch.tensor]:
+    def reset(
+        self, seed=None, options: dict[str, Any] | None = None
+    ) -> tuple[ObsType, dict[str, Any]]:
         """
         Resets the environment and starts a new episode
         """
+        super().reset(seed=seed)
+
+        sample = None
+        if options is not None:
+            sample = options.get("sample")
+
         # gets a new sample if not provided
         if sample is None:
             sample = self.sampler_for_replaying.sample(size=1)[0]
@@ -167,7 +189,8 @@ class TextGenEnv(Env):
         self.__time_step = 0
 
         dict_observation = self.__current_obs.to_dict()
-        return dict_observation
+        info = self._get_info()
+        return dict_observation, info
 
     def render(self):
         pass

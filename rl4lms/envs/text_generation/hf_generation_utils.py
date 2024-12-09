@@ -62,6 +62,22 @@ from transformers.generation.stopping_criteria import (
 from transformers.utils import ModelOutput, logging
 
 
+def is_torchdynamo_compiling():
+    # Importing torch._dynamo causes issues with PyTorch profiler (https://github.com/pytorch/pytorch/issues/130622)
+    # hence rather relying on `torch.compiler.is_compiling()` when possible (torch>=2.3)
+    try:
+        import torch
+
+        return torch.compiler.is_compiling()
+    except Exception:
+        try:
+            import torch._dynamo as dynamo  # noqa: F401
+
+            return dynamo.is_compiling()
+        except Exception:
+            return False
+
+
 logger = logging.get_logger(__name__)
 
 
@@ -1277,9 +1293,9 @@ class GenerationMixinWithRawScores:
 
         if pad_token_id is None and eos_token_id is not None:
             # special case if pad_token_id is not defined
-            logger.warning(
-                f"Setting `pad_token_id` to `eos_token_id`:{eos_token_id} for open-end generation."
-            )
+            #logger.warning(
+            #    f"Setting `pad_token_id` to `eos_token_id`:{eos_token_id} for open-end generation."
+            #)
             pad_token_id = eos_token_id
 
         output_scores = (
@@ -1985,11 +2001,15 @@ class GenerationMixinWithRawScores:
                 )
 
             # stop when each sentence is finished, or if we exceed the maximum length
-            if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
-                if not synced_gpus:
-                    break
-                else:
-                    this_peer_finished = True
+            assert not synced_gpus
+            this_peer_finished = (
+                unfinished_sequences & ~stopping_criteria(input_ids, scores)
+            ).max() == 0
+            # if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
+            #    if not synced_gpus:
+            #        break
+            #    else:
+            #        this_peer_finished = True
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -2011,6 +2031,39 @@ class GenerationMixinWithRawScores:
                 )
         else:
             return input_ids
+
+    def _has_unfinished_sequences(
+        self,
+        this_peer_finished: bool,
+        synced_gpus: bool,
+        device: torch.device,
+        cur_len: Optional[int] = None,
+        max_length: Optional[int] = None,
+    ) -> bool:
+        """
+        Returns whether there are still unfinished sequences in the device. The existence of unfinished sequences is
+        fed through `this_peer_finished`. ZeRO stage 3-friendly.
+        """
+        # torch.compile does not support data-dependent control flow. This is a workaround to allow torch.compile,
+        # although we lose the ability to stop when all sequences return an EOS token (and other stopping criteria)
+        # TODO (joao): remove this when torch's support for control flow is not experimental (https://pytorch.org/docs/stable/generated/torch.cond.html)
+        if is_torchdynamo_compiling():
+            return cur_len < max_length
+        else:
+            if synced_gpus:
+                # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
+                # The following logic allows an early break if all peers finished generating their sequence
+                this_peer_finished_flag = torch.tensor(
+                    0.0 if this_peer_finished else 1.0
+                ).to(device)
+                # send 0.0 if we finished, 1.0 otherwise
+                dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
+                # did all peers finish? the reduced sum will be 0.0 then
+                if this_peer_finished_flag.item() == 0.0:
+                    return False
+            elif this_peer_finished:
+                return False
+            return True
 
     def sample(
         self,
@@ -2127,6 +2180,7 @@ class GenerationMixinWithRawScores:
         >>> tokenizer.batch_decode(outputs, skip_special_tokens=True)
         ['Today is a beautiful day, and a wonderful day.\n\nI was lucky enough to meet the']
         ```"""
+        assert not synced_gpus
 
         # init values
         logits_processor = (
@@ -2204,7 +2258,10 @@ class GenerationMixinWithRawScores:
 
         this_peer_finished = False  # used by synced_gpus only
         # auto-regressive generation
-        while True:
+        # while True:
+        while self._has_unfinished_sequences(
+            this_peer_finished, synced_gpus, device=input_ids.device
+        ):
 
             if synced_gpus:
                 # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
@@ -2290,11 +2347,21 @@ class GenerationMixinWithRawScores:
                 )
 
             # stop when each sentence is finished, or if we exceed the maximum length
-            if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
-                if not synced_gpus:
-                    break
-                else:
-                    this_peer_finished = True
+            unfinished_sequences = unfinished_sequences & ~stopping_criteria(
+                input_ids, scores
+            )
+            this_peer_finished = unfinished_sequences.max() == 0
+            # this_peer_finished = (
+            #    unfinished_sequences & ~stopping_criteria(input_ids, scores)
+            # ).max() == 0
+            # print(this_peer_finished)
+            # if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
+            # this_peer_finished = True
+            # if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
+            #    if not synced_gpus:
+            #        break
+            #    else:
+            #        this_peer_finished = True
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -2642,11 +2709,15 @@ class GenerationMixinWithRawScores:
             # increase cur_len
             cur_len = cur_len + 1
 
-            if beam_scorer.is_done or stopping_criteria(input_ids, scores):
-                if not synced_gpus:
-                    break
-                else:
-                    this_peer_finished = True
+            assert not synced_gpus
+            this_peer_finished = (
+                unfinished_sequences & ~stopping_criteria(input_ids, scores)
+            ).max() == 0
+            # if beam_scorer.is_done or stopping_criteria(input_ids, scores):
+            #    if not synced_gpus:
+            #        break
+            #    else:
+            #        this_peer_finished = True
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -3038,11 +3109,15 @@ class GenerationMixinWithRawScores:
             # increase cur_len
             cur_len = cur_len + 1
 
-            if beam_scorer.is_done or stopping_criteria(input_ids, scores):
-                if not synced_gpus:
-                    break
-                else:
-                    this_peer_finished = True
+            assert not synced_gpus
+            this_peer_finished = (
+                beam_scorer.is_done & ~stopping_criteria(input_ids, scores)
+            ).max() == 0
+            # if beam_scorer.is_done or stopping_criteria(input_ids, scores):
+            #    if not synced_gpus:
+            #        break
+            #    else:
+            #        this_peer_finished = True
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -3478,11 +3553,15 @@ class GenerationMixinWithRawScores:
             # increase cur_len
             cur_len = cur_len + 1
 
-            if beam_scorer.is_done or stopping_criteria(input_ids, scores):
-                if not synced_gpus:
-                    break
-                else:
-                    this_peer_finished = True
+            assert not synced_gpus
+            this_peer_finished = (
+                beam_scorer.is_done & ~stopping_criteria(input_ids, scores)
+            ).max() == 0
+            # if beam_scorer.is_done or stopping_criteria(input_ids, scores):
+            #    if not synced_gpus:
+            #        break
+            #    else:
+            #        this_peer_finished = True
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -3856,11 +3935,14 @@ class GenerationMixinWithRawScores:
             # increase cur_len
             cur_len = cur_len + 1
 
-            if constrained_beam_scorer.is_done or stopping_criteria(input_ids, scores):
-                if not synced_gpus:
-                    break
-                else:
-                    this_peer_finished = True
+            this_peer_finished = constrained_beam_scorer.is_done & ~stopping_criteria(
+                input_ids, scores
+            )
+            # if constrained_beam_scorer.is_done or stopping_criteria(input_ids, scores):
+            #    if not synced_gpus:
+            #        break
+            #    else:
+            #        this_peer_finished = True
 
         sequence_outputs = constrained_beam_scorer.finalize(
             input_ids,
