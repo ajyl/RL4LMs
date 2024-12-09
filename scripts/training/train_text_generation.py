@@ -59,10 +59,7 @@ if __name__ == "__main__":
     parser = ArgumentParser(description="Fine-tune LM to generate controlled text")
     parser.add_argument("--config_path", type=str, help="path to the config file")
     parser.add_argument(
-        "--project_name", type=str, help="WANDB project name", default="rl4lm_exps"
-    )
-    parser.add_argument(
-        "--experiment_name",
+        "--exp",
         type=str,
         help="WANDB experiment name",
         default="rl4lm_experiment",
@@ -80,12 +77,15 @@ if __name__ == "__main__":
         "--log_to_wandb", action="store_true", help="Whether to use wandb logging"
     )
     args = parser.parse_args()
+    project_name = "ppo"
+
+    base_path = "n/holylabs/LABS/wattenberg_lab/Lab/ajyl_tmp/cube_ppo"
 
     main(
         args.config_path,
-        args.project_name,
-        args.experiment_name,
-        args.base_path_to_store_results,
+        project_name,
+        args.exp,
+        base_path,
         args.entity_name,
         args.log_to_wandb,
     )

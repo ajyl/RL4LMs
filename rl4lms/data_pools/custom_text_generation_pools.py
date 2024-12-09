@@ -185,7 +185,8 @@ class IMDB(TextGenPool):
 
     @classmethod
     def prepare(cls, split: str, seed: int):
-        dataset = load_dataset("imdb", ignore_verifications=True)
+        #dataset = load_dataset("imdb", ignore_verifications=True)
+        dataset = load_dataset("imdb")
         if split in ["train", "val"]:
             dataset_split = dataset["train"].shuffle(seed)
             train_ratio = 0.8

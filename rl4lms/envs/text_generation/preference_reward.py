@@ -53,7 +53,7 @@ def get_model(model_type, device=None):
             os.makedirs(dest_base_path, exist_ok=True)
             urlretrieve(model2url[model_type], dest_model_path)
 
-        state = torch.load(dest_model_path)
+        state = torch.load(dest_model_path, weights_only=False)
         if "model_state_dict" in state:
             state = state["model_state_dict"]
 

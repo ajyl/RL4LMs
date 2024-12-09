@@ -79,8 +79,8 @@ def build_datapool(datapool_config: Dict[str, Any]):
 
     samples_by_split = {
         "train": [(sample, weight) for sample, weight in train_datapool],
-        "val": [sample for sample, _ in val_datapool],
-        "test": [sample for sample, _ in test_datapool],
+        "val": [sample for sample, _ in val_datapool][:256],
+        "test": [sample for sample, _ in test_datapool][:256],
     }
     return samples_by_split
 
@@ -218,7 +218,7 @@ class OnPolicyTrainer(TrainerWarmStartMixin):
     def train_and_eval(self):
         # evaluate on val and test set before fine-tuning once
         iter_start = self._trainer_state["current_iter"]
-        self._evaluate_on_datapools(epoch=iter_start)
+        self._evaluate_on_datapools(epoch=iter_start, splits=["val"])
 
         # train for given number of iters
         for epoch in range(iter_start, self._n_iters):
@@ -239,7 +239,7 @@ class OnPolicyTrainer(TrainerWarmStartMixin):
                 self._evaluate_on_datapools(epoch=epoch, splits=["val"])
 
         # finally evaluate on val and test samples
-        self._evaluate_on_datapools(epoch=epoch)
+        self._evaluate_on_datapools(epoch=epoch, splits=["val"])
 
         # save model here - we save only the language model
         if self._tracker is not None:
@@ -351,13 +351,15 @@ class SupervisedTrainer:
 
     def train_and_eval(self):
         # evaluate on val and test set before fine-tuning once
-        self._evaluate_on_datapools(epoch=0)
+        self._evaluate_on_datapools(epoch=0, splits=["val"])
 
         # train using HF trainer
         self._trainer.train()
 
         # finally evaluate on val and test samples
-        self._evaluate_on_datapools(epoch=self._train_args.num_train_epochs)
+        self._evaluate_on_datapools(
+            epoch=self._train_args.num_train_epochs, splits=["test"]
+        )
 
         # save model here - we save only the language model
         if self._tracker is not None:
