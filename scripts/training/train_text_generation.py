@@ -79,7 +79,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     project_name = "ppo"
 
-    base_path = "n/holylabs/LABS/wattenberg_lab/Lab/ajyl_tmp/cube_ppo"
+    base_path = "/n/holylabs/LABS/wattenberg_lab/Lab/ajyl_tmp/cube_ppo"
 
     main(
         args.config_path,
